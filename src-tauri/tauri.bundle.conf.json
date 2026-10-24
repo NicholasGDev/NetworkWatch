@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "resources": {
+      "resources/backend/": "backend/"
+    },
+    "useLocalToolsDir": true
+  }
+}

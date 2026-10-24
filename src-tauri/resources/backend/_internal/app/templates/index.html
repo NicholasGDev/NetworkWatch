@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="night">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{ csrf }}"><title>ScrollAnswer</title>
+<link rel="stylesheet" href="/static/app.css"><script src="/static/app.js" defer></script>
+</head>
+<body class="min-h-screen bg-base-300 text-base-content">
+<main class="max-w-3xl mx-auto p-6 sm:p-10">
+<a href="/" class="btn btn-sm btn-outline mb-6">← Voltar ao painel de rede <kbd class="kbd kbd-xs ml-1">Esc</kbd></a>
+<header class="flex items-start justify-between gap-4 mb-8">
+<div><p class="text-primary text-xs uppercase tracking-widest mb-2">Seu assistente de tela</p>
+<h1 class="text-3xl font-semibold tracking-tight">ScrollAnswer<span class="text-primary">.</span></h1>
+<p class="text-base-content/60 text-sm mt-2">Uma tecla. Uma captura. Sua resposta aqui.</p></div>
+<kbd class="kbd kbd-lg mt-2">ScrLk</kbd></header>
+<section class="card bg-base-100 border border-base-content/10 mb-6"><div class="card-body p-5">
+<div class="flex flex-wrap items-center justify-between gap-3">
+<div class="flex items-center gap-3"><span id="light" class="badge badge-warning badge-xs"></span>
+<span id="status" role="status">Conectando…</span></div>
+<button id="pause" class="btn btn-sm btn-ghost" disabled>Pausar captura</button></div>
+<p class="text-sm text-base-content/50">Com a janela desejada em primeiro plano, pressione Scroll Lock. A captura não abre prévia nem muda o foco.</p>
+<p id="model" class="text-xs text-base-content/40"></p></div></section>
+<p id="email" role="status" class="text-xs mb-4 text-base-content/70"></p>
+<div id="error" role="alert" class="alert alert-error mb-5 hidden"></div>
+<div class="flex items-center justify-between mb-4">
+<h2 class="text-sm font-medium">Respostas <span id="count" class="badge badge-sm badge-neutral ml-1">0</span></h2>
+<button id="clear" class="btn btn-xs btn-ghost text-base-content/50">Limpar histórico</button></div>
+<section id="answers" class="space-y-4" aria-live="polite"></section>
+<div id="empty" class="text-center border border-dashed border-base-content/20 rounded-2xl px-6 py-14">
+<div class="text-3xl mb-4 text-primary">↵</div><h2 class="font-medium">Sua primeira resposta começa com ScrLk</h2>
+<p class="text-sm text-base-content/50 mt-2">Abra o navegador, escolha o conteúdo e pressione a tecla.</p></div>
+<footer class="text-xs text-base-content/40 mt-8">Capturas são enviadas à API de IA somente ao pressionar ScrLk. Imagens não são salvas neste computador. Se o SMTP estiver configurado, somente o texto da resposta é enviado por e-mail. As últimas 100 respostas aparecem aqui.</footer>
+</main></body></html>

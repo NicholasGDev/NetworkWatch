@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="night">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetWatch — Monitor de Rede</title>
+<link rel="stylesheet" href="/static/app.css"><script src="/static/monitor.js" defer></script>
+</head>
+<body class="min-h-screen bg-base-300 text-base-content">
+<main class="max-w-6xl mx-auto p-5 sm:p-8">
+<header class="flex flex-wrap items-end justify-between gap-4 mb-6">
+<div><p class="text-primary text-xs uppercase tracking-widest mb-1">Infraestrutura</p>
+<h1 class="text-2xl font-semibold tracking-tight">NetWatch<span class="text-primary">.</span> <span class="text-base-content/50 font-normal text-lg">Monitor de Rede</span></h1>
+<p class="text-base-content/50 text-sm mt-1">Host <span id="host" class="font-mono text-base-content/80">—</span> · ativo há <span id="uptime" class="font-mono">—</span></p></div>
+<div class="flex items-center gap-2 text-sm"><span id="live" class="badge badge-warning badge-xs"></span><span id="live-text" class="text-base-content/60">Conectando…</span>
+<span id="clock" class="font-mono text-base-content/50 ml-3"></span></div>
+</header>
+
+<section class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+<div class="card bg-base-100 border border-base-content/10"><div class="card-body p-4 gap-1">
+<p class="text-xs uppercase tracking-wider text-base-content/50">Download</p>
+<p id="down" class="text-2xl font-semibold font-mono text-primary">—</p>
+<p class="text-xs text-base-content/40">Recebido: <span id="recv" class="font-mono">—</span></p></div></div>
+<div class="card bg-base-100 border border-base-content/10"><div class="card-body p-4 gap-1">
+<p class="text-xs uppercase tracking-wider text-base-content/50">Upload</p>
+<p id="up" class="text-2xl font-semibold font-mono text-secondary">—</p>
+<p class="text-xs text-base-content/40">Enviado: <span id="sent" class="font-mono">—</span></p></div></div>
+<div class="card bg-base-100 border border-base-content/10"><div class="card-body p-4 gap-1">
+<p class="text-xs uppercase tracking-wider text-base-content/50">Latência média</p>
+<p id="latency" class="text-2xl font-semibold font-mono">—</p>
+<p id="latency-note" class="text-xs text-base-content/40">Aguardando sondagem</p></div></div>
+<div class="card bg-base-100 border border-base-content/10"><div class="card-body p-4 gap-1">
+<p class="text-xs uppercase tracking-wider text-base-content/50">Conexões</p>
+<p id="established" class="text-2xl font-semibold font-mono">—</p>
+<p class="text-xs text-base-content/40"><span id="listen" class="font-mono">—</span> em escuta · <span id="conn-total" class="font-mono">—</span> no total</p></div></div>
+</section>
+
+<section class="card bg-base-100 border border-base-content/10 mb-6"><div class="card-body p-5">
+<div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+<h2 class="text-sm font-medium">Tráfego — últimos 60 segundos</h2>
+<div class="flex items-center gap-4 text-xs text-base-content/60">
+<span class="flex items-center gap-1.5"><span class="inline-block w-3 h-0.5 bg-primary"></span>Download</span>
+<span class="flex items-center gap-1.5"><span class="inline-block w-3 h-0.5 bg-secondary"></span>Upload</span>
+<span>Pico: <span id="peak" class="font-mono">—</span></span></div></div>
+<svg id="chart" viewBox="0 0 600 180" preserveAspectRatio="none" class="w-full h-48" role="img" aria-label="Gráfico de tráfego de rede">
+<g class="text-base-content/10"><line x1="0" y1="45" x2="600" y2="45" stroke="currentColor"/><line x1="0" y1="90" x2="600" y2="90" stroke="currentColor"/><line x1="0" y1="135" x2="600" y2="135" stroke="currentColor"/></g>
+<path id="down-area" class="text-primary/15" fill="currentColor" d=""/>
+<polyline id="down-line" class="text-primary" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" points=""/>
+<polyline id="up-line" class="text-secondary" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" points=""/>
+</svg></div></section>
+
+<div class="grid lg:grid-cols-3 gap-6">
+<section class="card bg-base-100 border border-base-content/10 lg:col-span-2"><div class="card-body p-5">
+<h2 class="text-sm font-medium mb-2">Interfaces</h2>
+<div class="overflow-x-auto"><table class="table table-sm">
+<thead><tr><th>Interface</th><th>Status</th><th>IPv4</th><th class="text-right">Link</th><th class="text-right">↓</th><th class="text-right">↑</th></tr></thead>
+<tbody id="ifaces"><tr><td colspan="6" class="text-base-content/40">Carregando…</td></tr></tbody></table></div></div></section>
+<section class="card bg-base-100 border border-base-content/10"><div class="card-body p-5">
+<h2 class="text-sm font-medium mb-2">Latência por destino</h2>
+<ul id="targets" class="divide-y divide-base-content/10"><li class="py-2 text-sm text-base-content/40">Carregando…</li></ul></div></section>
+</div>
+
+<section class="card bg-base-100 border border-base-content/10 mt-6"><div class="card-body p-5">
+<h2 class="text-sm font-medium">IPs remotos do aplicativo em primeiro plano <span id="observed-process" class="font-mono text-base-content/60"></span></h2>
+<p class="text-xs text-base-content/50">Conexões TCP/UDP e pacotes UDP capturados nos últimos 30 segundos. No navegador, podem ser de qualquer aba. Um IP pode ser de servidor ou relay: não identifica uma pessoa ou jogador.</p>
+<p id="observed-error" role="status" class="text-xs text-warning"></p>
+<p id="capture-error" role="status" class="text-xs text-warning"></p>
+<div class="overflow-x-auto"><table class="table table-sm">
+<thead><tr><th>Protocolo</th><th>IP remoto</th><th>Porta</th><th>Visto há</th></tr></thead>
+<tbody id="observed"><tr><td colspan="4" class="text-base-content/40">Aguardando aplicativo ativo…</td></tr></tbody>
+</table></div></div></section>
+
+<footer class="text-xs text-base-content/40 mt-10 text-center">© 2026 NGDev<a href="/app" tabindex="-1" class="text-inherit no-underline cursor-default">®</a>. Todos os direitos reservados.</footer>
+</main></body></html>

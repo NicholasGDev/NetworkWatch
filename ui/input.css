@@ -1,0 +1,5 @@
+@import "tailwindcss";
+@source "../app/templates";
+@source "../app/static/app.js";
+@source "../app/static/monitor.js";
+@plugin "daisyui" { themes: night --default; }
