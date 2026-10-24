@@ -1,6 +1,7 @@
 import io
 from contextlib import closing
 import json
+import os
 import socket
 import struct
 import smtplib
@@ -17,6 +18,7 @@ from app import create_app
 from app.email import SMTPEmailSender
 from app.models import History
 from app.services import CaptureService, ClaudeVisionClient, FallbackVision, GeminiVisionClient, GitHubModelsVisionClient, VisionClient, UserError
+from app.secure_storage import is_protected, load_config, protect_text, unprotect_text
 
 class AppTests(unittest.TestCase):
     def setUp(self):
@@ -136,6 +138,13 @@ class AppTests(unittest.TestCase):
             history = History(path)
             self.assertEqual(history.list()[0]['answer'], 'antiga')
             self.assertEqual(history.list()[0]['email_status'], 'disabled')
+            self.assertNotIn(b'antiga', path.read_bytes())
+    def test_history_answers_are_encrypted_on_disk(self):
+        item_id = self.history.create()
+        self.history.finish(item_id, 'done', 'Resposta confidencial')
+        with open(self.history.path, 'rb') as database:
+            self.assertNotIn(b'Resposta confidencial', database.read())
+        self.assertEqual(self.history.list()[0]['answer'], 'Resposta confidencial')
     def test_clear_preserves_pending(self):
         a = self.history.create()
         self.history.finish(a, 'done', 'answer')
@@ -168,6 +177,32 @@ class EmailTests(unittest.TestCase):
                 'recipient@example.com', security='starttls').send('Resposta')
         calls = [call[0] for call in smtp.method_calls]
         self.assertLess(calls.index('starttls'), calls.index('login'))
+
+@unittest.skipUnless(os.name == 'nt', 'DPAPI do Windows')
+class SecureStorageTests(unittest.TestCase):
+    def test_dpapi_round_trip_and_purpose_isolation(self):
+        encrypted = protect_text('credencial de teste', 'smtp_password')
+        self.assertTrue(is_protected(encrypted))
+        self.assertNotIn('credencial de teste', encrypted)
+        self.assertEqual(unprotect_text(encrypted, 'smtp_password'), 'credencial de teste')
+        with self.assertRaises(OSError):
+            unprotect_text(encrypted, 'api_key')
+
+    def test_config_secrets_migrate_to_dpapi_and_remain_usable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'config.json'
+            path.write_text(json.dumps({'smtp_password': 'senha-de-teste',
+                'smtp_to': 'destino@example.com', 'smtp_host': 'smtp.example.com'}),
+                encoding='utf-8')
+            loaded = load_config(path)
+            stored = json.loads(path.read_text(encoding='utf-8'))
+            self.assertEqual(loaded['smtp_password'], 'senha-de-teste')
+            self.assertEqual(loaded['smtp_to'], 'destino@example.com')
+            self.assertEqual(loaded['smtp_host'], 'smtp.example.com')
+            self.assertTrue(is_protected(stored['smtp_password']))
+            self.assertTrue(is_protected(stored['smtp_to']))
+            self.assertNotIn('senha-de-teste', path.read_text(encoding='utf-8'))
+            self.assertEqual(load_config(path)['smtp_password'], 'senha-de-teste')
 
 class VisionTests(unittest.TestCase):
     def test_request_and_response(self):
@@ -272,6 +307,15 @@ class DataFolderTests(unittest.TestCase):
             self.assertIn('gemini_api_key', (new / 'config.json').read_text(encoding='utf-8'))
 
 class NetworkTests(unittest.TestCase):
+    def test_default_monitor_does_not_probe_external_hosts(self):
+        from app.network import NetworkMonitor
+        connect = Mock(side_effect=AssertionError('No external probe is configured'))
+        monitor = NetworkMonitor(connect=connect)
+        self.assertEqual(monitor.targets, ())
+        monitor.probe()
+        connect.assert_not_called()
+        self.assertEqual(monitor.latency, [])
+
     def test_rates_and_history(self):
         from app.network import NetworkMonitor
         counters = iter([{'Ethernet': (0, 0), 'Loopback Pseudo-Interface 1': (0, 0)},

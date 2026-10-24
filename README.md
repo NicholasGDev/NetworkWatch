@@ -10,6 +10,12 @@ Para jogos que usam UDP sem conectar o socket, **execute o NetWatch como adminis
 
 Os IPs são **endpoints de rede, não identidades de pessoas**. Um jogo pode usar servidores/relays, um site pode usar CDNs e outras pessoas no mesmo site não têm conexões diretas com seu computador. Nem a captura por pacotes permite revelar IPs individuais que a arquitetura do serviço não expõe. O mapeamento de UDP usa porta local e processo: se vários processos compartilharem a mesma porta, a atribuição ambígua é ignorada. Não faz varredura, consultas externas de IP nem envia esses dados para terceiros.
 
+### Dados e conexões de saída
+
+O coletor do painel calcula tráfego, interfaces e conexões localmente e o navegador do painel consulta o backend somente por loopback (`127.0.0.1`). As sondagens externas de latência estão desativadas por padrão; a latência fica vazia, sem conexões de teste automáticas para Cloudflare, Google DNS ou GitHub. O NetWatch não envia a lista de endpoints observados.
+
+Ao pressionar Scroll Lock, a imagem capturada é enviada ao(s) provedor(es) de IA que têm chave configurada, conforme a ordem de fallback documentada acima. Se o SMTP estiver configurado, o texto da resposta concluída vai ao destinatário SMTP configurado. Esses envios são intencionais; desativar as chaves/credenciais impede o respectivo serviço. O app não implementa telemetria. Isso descreve as conexões iniciadas pelo próprio NetWatch; **não impede que outro programa com acesso à sua conta do Windows leia arquivos locais ou observe o sistema**.
+
 Aplicativo Windows: **Scroll Lock → captura da janela ativa → API do Gemini (reservas opcionais: OpenAI, Claude) → resposta na janela Tauri**.
 
 ## Configuração rápida (Gemini)
@@ -40,7 +46,9 @@ npm.cmd run dev
 
 A chave fica apenas no backend. Não a envie pelo chat. API tem cobrança própria; este aplicativo não envia para esta conversa do Codex e não utiliza automaticamente sua assinatura do ChatGPT.
 
-Para configuração persistente, copie `config.example.json` para `%LOCALAPPDATA%\NetWatch\config.json`, preencha a chave no seu computador e reinicie. O arquivo contém a chave em texto simples: prefira a variável de ambiente se não quiser gravá-la. `OPENAI_API_KEY` e `OPENAI_MODEL` prevalecem sobre esse arquivo.
+Para configuração persistente, copie `config.example.json` para `%LOCALAPPDATA%\NetWatch\config.json`, preencha a chave no seu computador e reinicie. `OPENAI_API_KEY` e `OPENAI_MODEL` prevalecem sobre esse arquivo.
+
+No Windows, ao iniciar, o aplicativo criptografa valores locais de chaves de API, credenciais/endereço SMTP e prompt com DPAPI vinculada à conta atual, e os descriptografa somente em memória para uso. Para trocar um desses valores, edite apenas a propriedade correspondente no `config.json` local colocando o novo texto; no próximo início ele será protegido novamente. O `Configurar-chave.cmd` também continua funcionando. Valores fornecidos por variáveis de ambiente são lidos diretamente do ambiente do processo e não são gravados pelo NetWatch.
 
 Modelo padrão: `gpt-4.1-mini`; altere para outro modelo com suporte a imagens disponível em sua conta. O prompt também pode ser alterado no JSON.
 
@@ -60,9 +68,15 @@ Se a chamada à OpenAI falhar (rede, chave, saldo, modelo), a mesma captura é e
 
 Cada resposta **concluída** pode ser enviada por SMTP, além de aparecer normalmente no histórico. A entrega ocorre uma vez por captura, sem repetição automática (para evitar mensagens duplicadas). Erros de envio aparecem abaixo da resposta e não apagam o texto retornado pela IA. Requer conexão, servidor SMTP e credenciais; o endereço de destino sozinho não permite enviar.
 
-Configure localmente `%LOCALAPPDATA%\NetWatch\config.json` (copie `config.example.json`) ou defina variáveis de ambiente de mesmo nome em maiúsculas: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO`. Exemplo para quem usa a conta remetente no Gmail: `smtp_host` = `smtp.gmail.com`, `smtp_port` = `465`, `smtp_security` = `ssl`, `smtp_username` = endereço da conta, `smtp_password` = **senha de app** dessa conta; `smtp_from` pode ficar vazio (usa o usuário). Para servidor com STARTTLS, configure `smtp_security` = `starttls` e normalmente porta `587`. `smtp_to` já contém o destinatário solicitado no exemplo. Reinicie o app após configurar. **Não envie a senha pelo chat nem a inclua no código/instalador.** O arquivo local contém credenciais em texto simples; prefira variáveis de ambiente se necessário.
+Configure localmente `%LOCALAPPDATA%\NetWatch\config.json` (copie `config.example.json`) ou defina variáveis de ambiente de mesmo nome em maiúsculas: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO`. Exemplo para quem usa a conta remetente no Gmail: `smtp_host` = `smtp.gmail.com`, `smtp_port` = `465`, `smtp_security` = `ssl`, `smtp_username` = endereço da conta, `smtp_password` = **senha de app** dessa conta; `smtp_from` pode ficar vazio (usa o usuário). Para servidor com STARTTLS, configure `smtp_security` = `starttls` e normalmente porta `587`. `smtp_to` já contém o destinatário solicitado no exemplo. Reinicie o app após configurar. **Não envie a senha pelo chat nem a inclua no código/instalador.** Segredos locais passam a ser criptografados pelo DPAPI depois do próximo início do app.
 
 Sem configuração completa o painel indica que o e-mail está desativado. Envio real depende das credenciais do usuário e não é executado nos testes automatizados.
+
+### Criptografia e limites de proteção local
+
+No Windows, a configuração acima protege com DPAPI os segredos configurados e o prompt. O texto de cada resposta também é armazenado criptografado no SQLite; as respostas antigas em texto simples são migradas no primeiro início e o banco é compactado para remover cópias antigas de páginas SQLite quando possível. Status, datas e estados de entrega permanecem como metadados não criptografados. Imagens capturadas e endpoints de rede são mantidos em memória, não salvos pelo app.
+
+As chamadas a provedores de IA são feitas por HTTPS e SMTP usa SSL/TLS ou STARTTLS. A interface fala com o backend por HTTP somente em `127.0.0.1`, com sessão autenticada e token CSRF; esse tráfego não é enviado pela rede externa. DPAPI protege dados armazenados contra leitura offline simples e é vinculada à mesma conta deste Windows. Não substitui controle de acesso da conta, não protege valores enquanto estão sendo usados na memória e não impede que um processo executado na mesma sessão ou como administrador tente obtê-los. Cópias antigas, snapshots ou backups do disco também podem manter dados anteriores à migração; não é possível garantir apagamento físico de SSDs.
 
 ### Privacidade de monitores no Firefox
 
@@ -95,6 +109,7 @@ O script gera um backend independente com PyInstaller, inclui CSS local e empaco
 - `app/templates/` + `app/static/`: Views; respostas renderizadas como texto, sem executar HTML.
 - `app/services.py`: exclusão mútua, execução assíncrona, integração Responses API e mensagens de erro.
 - `app/email.py`: envio SMTP autenticado e seguro das respostas concluídas.
+- `app/secure_storage.py`: proteção DPAPI de configuração e credenciais locais.
 - `app/windows.py`: RegisterHotKey (sem hook geral de teclado), captura em memória.
 - `app/network.py`: tráfego, conexões do aplicativo ativo e captura UDP/IPv4 por sockets brutos do Windows com privilégios de administrador.
 - `backend.py`: composição, DPI, configurações e servidor Waitress em loopback/porta aleatória.

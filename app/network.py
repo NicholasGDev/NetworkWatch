@@ -8,7 +8,7 @@ import time
 from collections import deque
 import psutil
 
-TARGETS = [('Cloudflare DNS', '1.1.1.1', 443), ('Google DNS', '8.8.8.8', 443), ('GitHub', 'github.com', 443)]
+TARGETS = ()
 HIDDEN = ('loopback', 'pseudo')
 BROWSERS = {'firefox.exe', 'chrome.exe', 'msedge.exe', 'brave.exe', 'opera.exe'}
 

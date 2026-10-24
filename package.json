@@ -1,6 +1,6 @@
 {
   "name": "scroll-answer",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "private": true,
   "scripts": {
     "css": "tailwindcss -i ./ui/input.css -o ./app/static/app.css --minify",

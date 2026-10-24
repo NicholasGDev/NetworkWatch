@@ -75,7 +75,8 @@ function render(s) {
   const ok = s.latency.filter((t) => t.ok);
   const probed = s.latency.some((t) => t.ok !== null);
   $('latency').textContent = ok.length ? Math.round(ok.reduce((a, t) => a + t.ms, 0) / ok.length) + ' ms' : '—';
-  $('latency-note').textContent = probed ? ok.length + ' de ' + s.latency.length + ' destinos respondendo' : 'Aguardando sondagem';
+  $('latency-note').textContent = !s.latency.length ? 'Sondagens externas desativadas' :
+    probed ? ok.length + ' de ' + s.latency.length + ' destinos respondendo' : 'Aguardando sondagem';
 
   $('ifaces').replaceChildren(...s.interfaces.map((i) => {
     const tr = document.createElement('tr');

@@ -8,6 +8,7 @@ import shutil
 from app import create_app
 from app.models import History
 from app.email import SMTPEmailSender
+from app.secure_storage import load_config
 from app.network import NetworkMonitor
 from app.services import CaptureService, ClaudeVisionClient, FallbackVision, GeminiVisionClient, GitHubModelsVisionClient, VisionClient
 from app.windows import ScrollLockListener, capture_active_window
@@ -40,7 +41,7 @@ def main():
             ctypes.windll.user32.SetProcessDPIAware()
     folder = data_folder()
     path = folder / 'config.json'
-    config = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {}
+    config = load_config(path)
     prompt = config.get('prompt', DEFAULT_PROMPT)
     gemini = GeminiVisionClient(os.environ.get('GEMINI_API_KEY') or config.get('gemini_api_key', ''),
         os.environ.get('GEMINI_MODEL') or config.get('gemini_model', 'gemini-3.5-flash'), prompt)
