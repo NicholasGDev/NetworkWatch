@@ -2,6 +2,7 @@ import ctypes
 import ipaddress
 import os
 import socket
+import struct
 import threading
 import time
 from collections import deque
@@ -46,6 +47,17 @@ def remote_address(address):
 
 def normalized_ip(address):
     return ipaddress.ip_address(address.split('%')[0]).compressed
+
+def udp_ipv4_header(data):
+    if len(data) < 28 or data[0] >> 4 != 4 or data[9] != socket.IPPROTO_UDP:
+        return None
+    header_size = (data[0] & 15) * 4
+    if header_size < 20 or len(data) < header_size + 8 or struct.unpack_from('!H', data, 6)[0] & 0x1fff:
+        return None
+    src = socket.inet_ntoa(data[12:16])
+    dst = socket.inet_ntoa(data[16:20])
+    sport, dport = struct.unpack_from('!HH', data, header_size)
+    return src, sport, dst, dport
 
 class NetworkMonitor:
     """Amostra tráfego a cada segundo e latência/conexões a cada `probe_every` amostras."""
@@ -155,41 +167,75 @@ class NetworkMonitor:
 
     def _capture_packets(self):
         if os.name != 'nt':
-            self.capture_error = 'Captura de pacotes requer Windows e Npcap.'
-            return
-        from scapy.all import conf, get_working_ifaces, sniff
-        from scapy.error import Scapy_Exception
-        conf.use_pcap = True
-        if not conf.use_pcap:
-            self.capture_error = 'Npcap não encontrado. Instale Npcap e reinicie o NetWatch para capturar UDP.'
+            self.capture_error = 'Captura UDP por socket bruto requer Windows.'
             return
         try:
             stats = psutil.net_if_stats()
-            interfaces = [iface for iface in get_working_ifaces()
-                          if iface.name in stats and stats[iface.name].isup and iface.ip != '127.0.0.1']
-            if not interfaces:
-                raise OSError('Nenhuma interface de rede ativa encontrada.')
-            self.capture_error = None
-            while not self.stop_event.is_set():
-                sniff(iface=interfaces, filter='udp', prn=self.on_packet, store=False, timeout=1)
-        except (OSError, Scapy_Exception) as exc:
-            self.capture_error = f'Falha na captura UDP ({type(exc).__name__}: {exc}).'
+            interfaces = psutil.net_if_addrs()
+        except (psutil.Error, OSError) as exc:
+            self.capture_error = f'Falha ao listar interfaces ({type(exc).__name__}).'
+            return
+        addresses = {a.address for name, state in stats.items() if state.isup
+                     for a in interfaces.get(name, []) if a.family == socket.AF_INET and not a.address.startswith('127.')}
+        if not addresses:
+            self.capture_error = 'Nenhuma interface IPv4 ativa para capturar UDP.'
+            return
+        sockets = []
+        failures = []
+        try:
+            for address in sorted(addresses):
+                sock = None
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IP)
+                    sock.bind((address, 0))
+                    sock.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
+                    sock.settimeout(1)
+                    sockets.append(sock)
+                except OSError as exc:
+                    failures.append(f'{address}: {type(exc).__name__} ({getattr(exc, "winerror", None) or exc.errno})')
+                    if sock:
+                        sock.close()
+            if not sockets:
+                self.capture_error = ('Captura UDP requer executar o NetWatch como administrador (sem Npcap).'
+                    if any('10013' in failure or '(5)' in failure for failure in failures)
+                    else 'Falha ao abrir interfaces IPv4: ' + '; '.join(failures))
+                return
+            if failures:
+                self.capture_error = 'Captura UDP parcial: ' + '; '.join(failures)
+            else:
+                self.capture_error = None
+            threads = [threading.Thread(target=self._read_packets, args=(sock,), daemon=True) for sock in sockets]
+            for thread in threads:
+                thread.start()
+            self.stop_event.wait()
+        finally:
+            for sock in sockets:
+                try:
+                    sock.ioctl(socket.SIO_RCVALL, socket.RCVALL_OFF)
+                except OSError:
+                    pass
+                sock.close()
 
-    def on_packet(self, packet):
-        from scapy.layers.inet import IP, UDP
-        from scapy.layers.inet6 import IPv6
-        if not packet.haslayer(UDP):
-            return
-        layer = packet[IP] if packet.haslayer(IP) else packet[IPv6] if packet.haslayer(IPv6) else None
-        if layer is None:
-            return
-        udp = packet[UDP]
-        source, destination = normalized_ip(layer.src), normalized_ip(layer.dst)
+    def _read_packets(self, sock):
+        while not self.stop_event.is_set():
+            try:
+                data = sock.recv(65535)
+            except socket.timeout:
+                continue
+            except OSError as exc:
+                if not self.stop_event.is_set():
+                    self.capture_error = f'Captura UDP interrompida ({type(exc).__name__}: {getattr(exc, "winerror", None) or exc.errno}).'
+                return
+            header = udp_ipv4_header(data)
+            if header:
+                self.on_packet(*header)
+
+    def on_packet(self, source, source_port, destination, destination_port):
         with self.lock:
             if source in self.local_ips:
-                local_ip, port, remote_ip, remote_port = source, udp.sport, destination, udp.dport
+                local_ip, port, remote_ip, remote_port = source, source_port, destination, destination_port
             elif destination in self.local_ips:
-                local_ip, port, remote_ip, remote_port = destination, udp.dport, source, udp.sport
+                local_ip, port, remote_ip, remote_port = destination, destination_port, source, source_port
             else:
                 return
             if not remote_address(remote_ip):

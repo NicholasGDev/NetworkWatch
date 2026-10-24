@@ -6,7 +6,7 @@ O app instalado se chama **NetWatch** e abre num painel de monitoramento de rede
 
 No painel de rede, a seção **IPs remotos do aplicativo em primeiro plano** lista endpoints TCP/UDP observados nos últimos 30 segundos. Ao colocar um jogo ou navegador em primeiro plano, o app mostra seu executável e os IPs/portas das conexões desse processo e de seus filhos; ao voltar ao NetWatch, mantém a última seleção. No Firefox/Chrome e outros navegadores, as conexões de várias abas compartilham processos: **não é possível afirmar a qual site/aba pertence cada IP**. Alguns processos protegidos podem exigir execução com privilégios apropriados.
 
-Para jogos que usam UDP sem conectar o socket, instale [Npcap](https://npcap.com/#download) no Windows e reinicie o NetWatch. A captura opcional examina somente cabeçalhos de pacotes UDP nas interfaces ativas; não armazena conteúdo dos pacotes. O painel informa se Npcap não está disponível ou se a captura falhou. **Não execute o instalador do driver vindo de fontes não oficiais.** O instalador do NetWatch não instala Npcap nem solicita privilégios de administrador automaticamente.
+Para jogos que usam UDP sem conectar o socket, **execute o NetWatch como administrador** para ativar a captura UDP/IPv4 por sockets brutos nativos do Windows; não é necessário instalar Npcap nem outro driver. A captura examina somente cabeçalhos de pacotes nas interfaces IPv4 ativas e não armazena conteúdo dos pacotes. O painel informa quando faltam permissões. Conexões visíveis ao sistema continuam listadas mesmo sem administrador; a captura adicional de pacotes não cobre IPv6. Iniciar o app normalmente pelo menu Iniciar **não eleva privilégios**: use "Executar como administrador" no atalho se realmente precisar dessa captura. Conceda privilégios elevados somente se confia no app e nas páginas abertas na sua sessão.
 
 Os IPs são **endpoints de rede, não identidades de pessoas**. Um jogo pode usar servidores/relays, um site pode usar CDNs e outras pessoas no mesmo site não têm conexões diretas com seu computador. Nem a captura por pacotes permite revelar IPs individuais que a arquitetura do serviço não expõe. O mapeamento de UDP usa porta local e processo: se vários processos compartilharem a mesma porta, a atribuição ambígua é ignorada. Não faz varredura, consultas externas de IP nem envia esses dados para terceiros.
 
@@ -90,7 +90,7 @@ O script gera um backend independente com PyInstaller, inclui CSS local e empaco
 - `app/services.py`: exclusão mútua, execução assíncrona, integração Responses API e mensagens de erro.
 - `app/email.py`: envio SMTP autenticado e seguro das respostas concluídas.
 - `app/windows.py`: RegisterHotKey (sem hook geral de teclado), captura em memória.
-- `app/network.py`: tráfego, conexões do aplicativo ativo e observação UDP via Npcap quando instalado.
+- `app/network.py`: tráfego, conexões do aplicativo ativo e captura UDP/IPv4 por sockets brutos do Windows com privilégios de administrador.
 - `backend.py`: composição, DPI, configurações e servidor Waitress em loopback/porta aleatória.
 - `src-tauri/`: janela nativa, inicialização e encerramento do backend.
 

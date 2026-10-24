@@ -54,7 +54,7 @@ function render(s) {
   const observed = s.observed;
   $('observed-process').textContent = observed.process ? '— ' + observed.process : '';
   $('observed-error').textContent = observed.error || '';
-  $('capture-error').textContent = observed.capture_error || 'Captura UDP por pacotes ativa.';
+  $('capture-error').textContent = observed.capture_error || 'Captura UDP/IPv4 por socket bruto ativa.';
   $('capture-error').className = 'text-xs ' + (observed.capture_error ? 'text-warning' : 'text-success');
   const rows = observed.endpoints.map((endpoint) => {
     const tr = document.createElement('tr');

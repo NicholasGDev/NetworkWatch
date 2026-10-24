@@ -2,6 +2,7 @@ import io
 from contextlib import closing
 import json
 import socket
+import struct
 import smtplib
 import sqlite3
 import tempfile
@@ -316,9 +317,8 @@ class NetworkTests(unittest.TestCase):
         with patch('app.network.psutil.net_if_addrs', return_value={
             'Ethernet': [SimpleNamespace(address='192.0.2.10', family=socket.AF_INET)]}):
             monitor.observe()
-        from scapy.layers.inet import IP, UDP
-        monitor.on_packet(IP(src='192.0.2.10', dst='198.51.100.3') / UDP(sport=51000, dport=7777))
-        monitor.on_packet(IP(src='192.0.2.10', dst='203.0.113.3') / UDP(sport=52000, dport=7777))
+        monitor.on_packet('192.0.2.10', 51000, '198.51.100.3', 7777)
+        monitor.on_packet('192.0.2.10', 52000, '203.0.113.3', 7777)
         ips = {item['ip'] for item in monitor.snapshot()['observed']['endpoints']}
         self.assertEqual(ips, {'198.51.100.2', '198.51.100.3'})
         self.assertEqual(monitor.snapshot()['observed']['process'], 'game.exe')
@@ -351,9 +351,24 @@ class NetworkTests(unittest.TestCase):
         with patch('app.network.psutil.net_if_addrs', return_value={
             'Ethernet': [SimpleNamespace(address='192.0.2.10', family=socket.AF_INET)]}):
             monitor.observe()
-        from scapy.layers.inet import IP, UDP
-        monitor.on_packet(IP(src='192.0.2.10', dst='198.51.100.3') / UDP(sport=51000, dport=7777))
+        monitor.on_packet('192.0.2.10', 51000, '198.51.100.3', 7777)
         self.assertEqual(monitor.snapshot()['observed']['endpoints'], [])
+
+    def test_udp_ipv4_header_checks_protocol_length_and_fragments(self):
+        from app.network import udp_ipv4_header
+        header = bytearray(28)
+        header[0] = 0x45
+        header[9] = socket.IPPROTO_UDP
+        header[12:16] = socket.inet_aton('192.0.2.10')
+        header[16:20] = socket.inet_aton('198.51.100.3')
+        struct.pack_into('!HH', header, 20, 51000, 7777)
+        self.assertEqual(udp_ipv4_header(header), ('192.0.2.10', 51000, '198.51.100.3', 7777))
+        self.assertIsNone(udp_ipv4_header(header[:27]))
+        header[9] = socket.IPPROTO_TCP
+        self.assertIsNone(udp_ipv4_header(header))
+        header[9] = socket.IPPROTO_UDP
+        header[6:8] = b'\x00\x01'
+        self.assertIsNone(udp_ipv4_header(header))
 
 class GitHubModelsTests(unittest.TestCase):
     def test_request_and_response(self):
