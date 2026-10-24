@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "NetWatch - privacidade de telas (Chrome)",
+  "version": "1.0.0",
+  "description": "Limita informações de múltiplas telas expostas a sites no Chrome.",
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "run_at": "document_start",
+      "world": "MAIN",
+      "js": ["screen.js"]
+    }
+  ]
+}
