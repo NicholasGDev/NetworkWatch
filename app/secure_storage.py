@@ -1,3 +1,5 @@
+"""Criptografia local de configuração e histórico usando a DPAPI do Windows."""
+
 import base64
 import ctypes
 import json
@@ -14,19 +16,47 @@ CONFIG_SECRET_FIELDS = (
 
 
 class DataBlob(ctypes.Structure):
+    """Representa o bloco de bytes exigido pelas funções de criptografia Win32."""
+
     _fields_ = [('size', wintypes.DWORD), ('data', ctypes.POINTER(ctypes.c_ubyte))]
 
 
 def is_protected(value):
+    """Indica se o texto usa o formato versionado de dados DPAPI do app.
+
+    Args:
+        value: Texto a verificar.
+
+    Returns:
+        ``True`` quando o prefixo identifica conteúdo protegido.
+    """
     return isinstance(value, str) and value.startswith(PREFIX)
 
 
 def _blob(data):
+    """Converte bytes em uma estrutura Win32 e mantém seu buffer vivo.
+
+    Args:
+        data: Conteúdo binário a associar à estrutura.
+
+    Returns:
+        Estrutura DPAPI e buffer compatível com a API Win32.
+    """
     buffer = ctypes.create_string_buffer(data, len(data))
     return DataBlob(len(data), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ubyte))), buffer
 
 
 def _crypt(data, purpose, protect):
+    """Protege ou revela bytes com DPAPI e entropia vinculada à finalidade.
+
+    Args:
+        data: Conteúdo binário de entrada.
+        purpose: Finalidade usada para separar dados protegidos.
+        protect: ``True`` para criptografar; ``False`` para descriptografar.
+
+    Returns:
+        Conteúdo binário protegido ou revelado.
+    """
     if os.name != 'nt':
         raise OSError('A proteção DPAPI requer Windows.')
     source, source_buffer = _blob(data)
@@ -53,6 +83,15 @@ def _crypt(data, purpose, protect):
 
 
 def protect_text(value, purpose):
+    """Protege texto UTF-8 e o serializa no formato versionado do aplicativo.
+
+    Args:
+        value: Texto confidencial em memória.
+        purpose: Finalidade associada à proteção.
+
+    Returns:
+        Texto codificado com o prefixo de versão DPAPI.
+    """
     if not isinstance(value, str):
         raise TypeError('O dado a proteger precisa ser texto.')
     encoded = _crypt(value.encode('utf-8'), purpose, True)
@@ -60,6 +99,19 @@ def protect_text(value, purpose):
 
 
 def unprotect_text(value, purpose):
+    """Descriptografa texto DPAPI validando formato e finalidade de uso.
+
+    Args:
+        value: Texto codificado no formato DPAPI do aplicativo.
+        purpose: Finalidade usada originalmente para proteger o valor.
+
+    Returns:
+        Texto original em UTF-8.
+
+    Raises:
+        ValueError: Formato ou prefixo de proteção inválido.
+        OSError: DPAPI não conseguiu revelar o valor para esta finalidade.
+    """
     if not is_protected(value):
         raise ValueError('O dado não contém uma proteção DPAPI reconhecida.')
     try:
@@ -70,6 +122,7 @@ def unprotect_text(value, purpose):
 
 
 def load_config(path):
+    """Carrega a configuração e migra segredos em texto claro para DPAPI."""
     path = Path(path)
     if not path.exists():
         return {}

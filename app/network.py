@@ -1,3 +1,5 @@
+"""Coleta local de estatísticas, conexões e endpoints de rede observáveis."""
+
 import ctypes
 import ipaddress
 import os
@@ -13,6 +15,11 @@ HIDDEN = ('loopback', 'pseudo')
 BROWSERS = {'firefox.exe', 'chrome.exe', 'msedge.exe', 'brave.exe', 'opera.exe'}
 
 def foreground_pid():
+    """Retorna o PID da janela em primeiro plano no Windows.
+
+    Returns:
+        PID do processo ativo ou ``None`` fora do Windows/sem janela ativa.
+    """
     if os.name != 'nt':
         return None
     from ctypes import wintypes
@@ -26,6 +33,14 @@ def foreground_pid():
     return pid.value or None
 
 def process_group(pid):
+    """Resolve o processo principal e seus descendentes para atribuição local.
+
+    Args:
+        pid: Identificador do processo da janela em primeiro plano.
+
+    Returns:
+        Nome do processo e conjunto de PIDs incluídos na observação.
+    """
     process = psutil.Process(pid)
     name = process.name()
     if any(parent.name().lower() == 'netwatch.exe' for parent in process.parents()):
@@ -39,6 +54,14 @@ def process_group(pid):
     return name, pids
 
 def remote_address(address):
+    """Indica se o endereço é remoto, roteável e não multicast.
+
+    Args:
+        address: Endereço IP textual, com possível identificador de escopo.
+
+    Returns:
+        ``True`` se o endereço puder ser tratado como remoto.
+    """
     try:
         ip = ipaddress.ip_address(address.split('%')[0])
     except ValueError:
@@ -46,9 +69,25 @@ def remote_address(address):
     return not (ip.is_loopback or ip.is_unspecified or ip.is_multicast)
 
 def normalized_ip(address):
+    """Remove o identificador de escopo e normaliza um endereço IP.
+
+    Args:
+        address: Endereço IPv4 ou IPv6 textual.
+
+    Returns:
+        Representação canônica do endereço IP.
+    """
     return ipaddress.ip_address(address.split('%')[0]).compressed
 
 def udp_ipv4_header(data):
+    """Extrai endereços e portas de um datagrama UDP/IPv4 válido.
+
+    Args:
+        data: Bytes recebidos de uma interface IPv4.
+
+    Returns:
+        Tupla de origem/porta e destino/porta, ou ``None`` se inválido.
+    """
     if len(data) < 28 or data[0] >> 4 != 4 or data[9] != socket.IPPROTO_UDP:
         return None
     header_size = (data[0] & 15) * 4
@@ -61,8 +100,10 @@ def udp_ipv4_header(data):
 
 class NetworkMonitor:
     """Amostra tráfego a cada segundo e latência/conexões a cada `probe_every` amostras."""
+
     def __init__(self, counters=None, connect=socket.create_connection, targets=TARGETS, interval=1.0, probe_every=5,
                  connections=psutil.net_connections, foreground=foreground_pid, group=process_group):
+        """Inicializa fontes de dados, estados protegidos por lock e limites de amostragem."""
         self.counters = counters or (lambda: {n: (c.bytes_sent, c.bytes_recv) for n, c in psutil.net_io_counters(pernic=True).items()})
         self.connect, self.targets, self.interval, self.probe_every = connect, targets, interval, probe_every
         self.get_connections, self.foreground, self.group = connections, foreground, group
@@ -82,25 +123,34 @@ class NetworkMonitor:
         self.previous = None
 
     def start(self):
+        """Inicia em segundo plano coleta, sondagem e captura de pacotes."""
         threading.Thread(target=self._run, daemon=True).start()
         threading.Thread(target=self._probe_loop, daemon=True).start()
         threading.Thread(target=self._capture_packets, daemon=True).start()
 
     def stop(self):
+        """Sinaliza o encerramento dos loops e da captura de pacotes."""
         self.stop_event.set()
 
     def _run(self):
+        """Atualiza amostras e conexões até o sinal de parada."""
         while not self.stop_event.is_set():
             self.sample()
             self.observe()
             self.stop_event.wait(self.interval)
 
     def _probe_loop(self):
+        """Executa sondagens configuradas na periodicidade selecionada."""
         while not self.stop_event.is_set():
             self.probe()
             self.stop_event.wait(self.interval * self.probe_every)
 
     def sample(self, now=None):
+        """Calcula taxas de entrada e saída e guarda até 60 amostras.
+
+        Args:
+            now: Instante monotônico opcional, injetado para testes.
+        """
         now = time.monotonic() if now is None else now
         current = self.counters()
         if self.previous:
@@ -117,6 +167,7 @@ class NetworkMonitor:
         self.previous = (current, now)
 
     def probe(self):
+        """Mede latência somente para os destinos explicitamente configurados."""
         results = []
         for name, host, port in self.targets:
             start = time.perf_counter()
@@ -129,6 +180,7 @@ class NetworkMonitor:
             self.latency = results
 
     def observe(self):
+        """Associa endpoints de rede ao aplicativo que está em primeiro plano."""
         try:
             conns = self.get_connections('inet')
             pid = self.foreground()
@@ -166,6 +218,7 @@ class NetworkMonitor:
             self.endpoints = {key: seen for key, seen in self.endpoints.items() if now - seen < 30}
 
     def _capture_packets(self):
+        """Abre sockets brutos IPv4 quando disponível e inicia leitores UDP."""
         if os.name != 'nt':
             self.capture_error = 'Captura UDP por socket bruto requer Windows.'
             return
@@ -217,6 +270,7 @@ class NetworkMonitor:
                 sock.close()
 
     def _read_packets(self, sock):
+        """Lê pacotes de uma interface e encaminha cabeçalhos UDP válidos."""
         while not self.stop_event.is_set():
             try:
                 data = sock.recv(65535)
@@ -231,6 +285,14 @@ class NetworkMonitor:
                 self.on_packet(*header)
 
     def on_packet(self, source, source_port, destination, destination_port):
+        """Registra endpoint UDP quando porta e processo local podem ser associados.
+
+        Args:
+            source: Endereço IPv4 de origem do pacote.
+            source_port: Porta UDP de origem.
+            destination: Endereço IPv4 de destino do pacote.
+            destination_port: Porta UDP de destino.
+        """
         with self.lock:
             if source in self.local_ips:
                 local_ip, port, remote_ip, remote_port = source, source_port, destination, destination_port
@@ -245,6 +307,11 @@ class NetworkMonitor:
             self.endpoints[('UDP', remote_ip, remote_port)] = time.monotonic()
 
     def snapshot(self):
+        """Monta uma fotografia serializável das métricas e endpoints recentes.
+
+        Returns:
+            Dicionário com tráfego, interfaces, conexões e endpoints observados.
+        """
         with self.lock:
             rates, history = dict(self.rates), list(self.history)
             latency, connections = list(self.latency), dict(self.connections)

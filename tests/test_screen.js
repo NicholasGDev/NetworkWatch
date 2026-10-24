@@ -1,3 +1,9 @@
+/**
+ * Testa a normalização de coordenadas de tela na extensão Firefox.
+ *
+ * @file
+ */
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');

@@ -1,3 +1,9 @@
+<#
+.SYNOPSIS
+Empacota o backend Python como recurso distribuível do aplicativo.
+.DESCRIPTION
+Instala PyInstaller quando necessário e copia a compilação para o bundle Tauri.
+#>
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 $pythonExe = Join-Path $PWD '.venv/Scripts/python.exe'

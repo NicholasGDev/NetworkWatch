@@ -1,3 +1,5 @@
+"""Clientes de IA visual e orquestração assíncrona das capturas."""
+
 import base64
 import json
 import logging
@@ -9,15 +11,38 @@ import urllib.request
 import anthropic
 
 class UserError(Exception):
+    """Erro operacional seguro para ser apresentado no painel ao usuário."""
+
     pass
 
 class VisionClient:
+    """Cliente de análise de imagens para a API de respostas da OpenAI."""
+
     name = 'OpenAI'
 
     def __init__(self, key, model, prompt, opener=urllib.request.urlopen):
+        """Armazena credenciais, modelo, instrução e transporte HTTP.
+
+        Args:
+            key: Chave de API OpenAI.
+            model: Identificador do modelo de visão.
+            prompt: Instrução enviada junto com a captura.
+            opener: Transporte HTTP substituível nos testes.
+        """
         self.key, self.model, self.prompt, self.opener = key, model, prompt, opener
 
     def answer(self, png):
+        """Envia a captura à OpenAI e devolve o texto da resposta.
+
+        Args:
+            png: Captura codificada como imagem PNG.
+
+        Returns:
+            Texto produzido pelo modelo.
+
+        Raises:
+            UserError: Chave ausente, falha de API ou resposta vazia.
+        """
         if not self.key:
             raise UserError('Configure OPENAI_API_KEY e reinicie o aplicativo.')
         payload = {'model': self.model, 'store': False, 'max_output_tokens': 4000,
@@ -48,12 +73,33 @@ class VisionClient:
         return result
 
 class GeminiVisionClient:
+    """Cliente de análise de imagens para a API Gemini."""
+
     name = 'Gemini'
 
     def __init__(self, key, model, prompt, opener=urllib.request.urlopen):
+        """Armazena credenciais, modelo, instrução e transporte HTTP.
+
+        Args:
+            key: Chave da API Gemini.
+            model: Identificador do modelo de visão.
+            prompt: Instrução enviada junto com a captura.
+            opener: Transporte HTTP substituível nos testes.
+        """
         self.key, self.model, self.prompt, self.opener = key, model, prompt, opener
 
     def answer(self, png):
+        """Envia a captura ao Gemini e devolve o texto gerado.
+
+        Args:
+            png: Captura codificada como imagem PNG.
+
+        Returns:
+            Texto produzido pelo modelo.
+
+        Raises:
+            UserError: Chave ausente, bloqueio, falha de API ou resposta vazia.
+        """
         if not self.key:
             raise UserError('Configure GEMINI_API_KEY e reinicie o aplicativo.')
         payload = {
@@ -97,12 +143,32 @@ class GeminiVisionClient:
 
 class GitHubModelsVisionClient:
     """GitHub Models (API do GitHub/Copilot) no formato chat completions da OpenAI."""
+
     name = 'GitHub Copilot'
 
     def __init__(self, key, model, prompt, opener=urllib.request.urlopen):
+        """Armazena o token, modelo, instrução e transporte HTTP.
+
+        Args:
+            key: Token do GitHub com acesso ao GitHub Models.
+            model: Identificador do modelo de visão.
+            prompt: Instrução enviada junto com a captura.
+            opener: Transporte HTTP substituível nos testes.
+        """
         self.key, self.model, self.prompt, self.opener = key, model, prompt, opener
 
     def answer(self, png):
+        """Envia a captura ao GitHub Models e devolve a resposta textual.
+
+        Args:
+            png: Captura codificada como imagem PNG.
+
+        Returns:
+            Texto produzido pelo modelo.
+
+        Raises:
+            UserError: Token ausente, falha de API ou resposta vazia.
+        """
         if not self.key:
             raise UserError('Configure GITHUB_TOKEN e reinicie o aplicativo.')
         payload = {'model': self.model, 'messages': [
@@ -136,12 +202,33 @@ class GitHubModelsVisionClient:
         return result
 
 class ClaudeVisionClient:
+    """Cliente de análise de imagens para a API Claude da Anthropic."""
+
     name = 'Claude'
 
     def __init__(self, key, model, prompt, client_factory=None):
+        """Armazena credenciais e uma fábrica opcional de cliente para testes.
+
+        Args:
+            key: Chave da API Anthropic.
+            model: Identificador do modelo de visão.
+            prompt: Instrução enviada junto com a captura.
+            client_factory: Fábrica opcional de cliente, útil em testes.
+        """
         self.key, self.model, self.prompt, self.client_factory = key, model, prompt, client_factory
 
     def answer(self, png):
+        """Envia a captura ao Claude e converte erros da API em mensagens seguras.
+
+        Args:
+            png: Captura codificada como imagem PNG.
+
+        Returns:
+            Texto produzido pelo modelo.
+
+        Raises:
+            UserError: Chave ausente, recusa, falha de API ou resposta vazia.
+        """
         if not self.key:
             raise UserError('Configure ANTHROPIC_API_KEY e reinicie o aplicativo.')
         # Sem novas tentativas automáticas, para não gerar cobrança duplicada.
@@ -179,22 +266,42 @@ class ClaudeVisionClient:
 
 class FallbackVision:
     """Tenta cada provedor com chave, na ordem; se um falhar, passa para o próximo."""
+
     def __init__(self, *clients):
+        """Guarda os clientes na ordem de prioridade configurada.
+
+        Args:
+            *clients: Clientes de visão ordenados por prioridade de uso.
+        """
         self.clients = clients
 
     @property
     def active(self):
+        """Retorna clientes que têm uma chave de API configurada."""
         return [c for c in self.clients if c.key]
 
     @property
     def key(self):
+        """Indica se pelo menos um provedor pode ser usado."""
         return bool(self.active)
 
     @property
     def model(self):
+        """Lista os modelos ativos ou informa o primeiro modelo disponível."""
         return ' → '.join(c.model for c in self.active) or self.clients[0].model
 
     def answer(self, png):
+        """Tenta os provedores em ordem e retorna a primeira resposta válida.
+
+        Args:
+            png: Captura codificada como imagem PNG.
+
+        Returns:
+            Primeira resposta válida, incluindo falhas anteriores quando aplicável.
+
+        Raises:
+            UserError: Todos os provedores ativos falharam ou não há chaves.
+        """
         clients = self.active
         if len(clients) == 1:
             return clients[0].answer(png)
@@ -211,7 +318,18 @@ class FallbackVision:
         raise UserError('\n'.join(errors) or 'Configure uma chave de API e reinicie o aplicativo.')
 
 class CaptureService:
+    """Coordena captura, análise, histórico e envio opcional de e-mail."""
+
     def __init__(self, history, vision, capture, email_sender=None, email_config_error=None):
+        """Inicializa dependências e o estado compartilhado do serviço.
+
+        Args:
+            history: Persistência das capturas e respostas.
+            vision: Cliente ou cadeia de provedores de visão.
+            capture: Função que captura a janela ativa em PNG.
+            email_sender: Remetente SMTP opcional de respostas concluídas.
+            email_config_error: Erro seguro de configuração SMTP, se houver.
+        """
         self.history, self.vision, self.capture = history, vision, capture
         self.email_sender, self.email_config_error = email_sender, email_config_error
         self.lock = threading.Lock()
@@ -220,6 +338,11 @@ class CaptureService:
         self.hotkey_ready = False
 
     def trigger(self):
+        """Cria um registro e agenda uma captura se o serviço estiver disponível.
+
+        Returns:
+            ``True`` quando iniciou o processamento; ``False`` quando indisponível.
+        """
         if self.paused or not self.lock.acquire(blocking=False):
             return False
         item_id = None
@@ -239,6 +362,7 @@ class CaptureService:
             return False
 
     def _process(self, item_id, png):
+        """Processa uma captura, persiste o resultado e envia e-mail se habilitado."""
         try:
             try:
                 answer = self.vision.answer(png)
@@ -259,6 +383,11 @@ class CaptureService:
             self.lock.release()
 
     def status(self):
+        """Devolve o estado de captura, atalho, modelo e configuração de e-mail.
+
+        Returns:
+            Dicionário serializável com o estado atual do serviço.
+        """
         return {'busy': self.lock.locked(), 'paused': self.paused, 'configured': bool(self.vision.key),
             'hotkey_ready': self.hotkey_ready, 'hotkey_error': self.hotkey_error, 'model': self.vision.model,
             'email_configured': self.email_sender is not None, 'email_config_error': self.email_config_error}

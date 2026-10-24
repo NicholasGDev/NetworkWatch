@@ -1,3 +1,5 @@
+"""Testes do registro e despacho do atalho global no Windows."""
+
 import ctypes
 import os
 import threading
@@ -8,7 +10,10 @@ from app.windows import ScrollLockListener
 
 @unittest.skipUnless(os.name == 'nt', 'Windows only')
 class HotkeyTests(unittest.TestCase):
+    """Verifica o ciclo de vida do ouvinte Scroll Lock sem capturar tela."""
+
     def test_register_dispatch_and_unregister(self):
+        """Registra, despacha um evento sintético e encerra a thread do atalho."""
         called = threading.Event()
         service = SimpleNamespace(hotkey_ready=False, hotkey_error=None, trigger=called.set)
         listener = ScrollLockListener(service)

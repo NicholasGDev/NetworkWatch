@@ -1,4 +1,17 @@
+/**
+ * Limita informações de posição e enumeração de telas nas páginas.
+ *
+ * @file
+ */
+
 (() => {
+  /**
+   * Localiza o descritor de uma propriedade em um objeto ou protótipo.
+   *
+   * @param {object} object Objeto ou protótipo inicial da busca.
+   * @param {string} property Nome da propriedade procurada.
+   * @returns {{owner: object, descriptor: PropertyDescriptor}|null} Descritor ou null.
+   */
   function descriptorFor(object, property) {
     for (let owner = object; owner; owner = Object.getPrototypeOf(owner)) {
       const descriptor = Object.getOwnPropertyDescriptor(owner, property);

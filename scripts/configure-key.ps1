@@ -1,9 +1,21 @@
+<#
+.SYNOPSIS
+Configura chaves de provedores de IA no armazenamento local do NetWatch.
+.DESCRIPTION
+Solicita credenciais sem exibi-las e atualiza a configuração local do usuário.
+#>
 $ErrorActionPreference = 'Stop'
 Write-Host 'Configurar APIs do NetWatch'
 Write-Host 'As chaves serao salvas no config.json local do aplicativo.'
 Write-Host 'Deixe em branco (Enter) para manter a chave atual ou pular.'
 
 function Read-Key($label) {
+    <#
+    .SYNOPSIS
+    Lê uma credencial sem ecoá-la no terminal.
+    .PARAMETER label
+    Rótulo exibido durante a solicitação da credencial.
+    #>
     $secure = Read-Host $label -AsSecureString
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
     try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer).Trim() }

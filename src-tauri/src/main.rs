@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+//! Inicializa a janela Tauri, o backend local e o ícone da bandeja do NetWatch.
+
 use std::{
     io::{BufRead, BufReader},
     process::{Child, Command, Stdio},
@@ -14,8 +16,10 @@ use tauri::{
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+/// Mantém o processo filho do backend e encerra-o ao descartar o estado.
 struct Backend(Mutex<Option<Child>>);
 impl Drop for Backend {
+    /// Finaliza e aguarda o backend para evitar processos órfãos.
     fn drop(&mut self) {
         if let Ok(child) = self.0.get_mut() {
             if let Some(mut child) = child.take() {
@@ -26,6 +30,7 @@ impl Drop for Backend {
     }
 }
 
+/// Exibe e focaliza a janela principal se ela estiver disponível.
 fn show_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -34,6 +39,7 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// Configura o ciclo de vida da janela, do backend e do ícone da bandeja.
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))

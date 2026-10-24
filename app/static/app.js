@@ -1,6 +1,24 @@
+/**
+ * Controla a interface de respostas, captura e entrega por e-mail.
+ *
+ * @file
+ */
+
+/**
+ * Obtém um elemento da página pelo identificador.
+ *
+ * @param {string} id Identificador do elemento.
+ * @returns {HTMLElement|null} Elemento encontrado ou null.
+ */
 const $ = (id) => document.getElementById(id);
 let paused = false;
 let previous = '';
+/**
+ * Consulta a API local e inclui proteção CSRF em operações de alteração.
+ * @param {string} path Caminho relativo à API.
+ * @param {object} [body] Dados JSON da operação POST.
+ * @returns {Promise<object>} Resposta JSON do backend.
+ */
 async function api(path, body) {
   const response = await fetch('/api/' + path, body === undefined ? {} : {
     method: 'POST', headers: {'Content-Type': 'application/json',
@@ -10,6 +28,11 @@ async function api(path, body) {
   if (!response.ok) throw new Error('Não foi possível acessar o serviço local. Reinicie o app se o problema continuar.');
   return response.json();
 }
+/**
+ * Renderiza o histórico de respostas e o estado das entregas por e-mail.
+ * @param {Array<object>} items Respostas devolvidas pelo backend.
+ * @returns {void}
+ */
 function render(items) {
   const signature = JSON.stringify(items);
   if (signature === previous) return;
@@ -41,6 +64,11 @@ function render(items) {
     card.append(body); return card;
   }));
 }
+/**
+ * Atualiza estado e histórico e agenda a próxima consulta local.
+ *
+ * @returns {Promise<void>}
+ */
 async function refresh() {
   try {
     const {status: s, answers} = await api('state');
@@ -64,6 +92,12 @@ async function refresh() {
     $('error').textContent = error.message; $('error').classList.remove('hidden');
   } finally { setTimeout(refresh, 1000); }
 }
+/**
+ * Executa uma ação da interface e exibe falhas no painel.
+ * @param {string} path Rota da ação.
+ * @param {object} body Corpo JSON da solicitação.
+ * @returns {Promise<void>}
+ */
 async function action(path, body) {
   try { await api(path, body); }
   catch (error) { $('error').textContent = error.message; $('error').classList.remove('hidden'); }

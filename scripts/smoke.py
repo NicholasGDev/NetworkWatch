@@ -1,4 +1,4 @@
-"""Start the real server without hotkeys, verify HTTP session, then stop it."""
+"""Testa o servidor real, a sessão local e as APIs sem registrar atalhos."""
 import http.cookiejar
 import json
 import os

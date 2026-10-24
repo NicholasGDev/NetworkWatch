@@ -1,3 +1,9 @@
+/**
+ * Testa as proteções de API de tela da extensão Chrome.
+ *
+ * @file
+ */
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -11,6 +17,9 @@ assert.equal(injection.match_origin_as_fallback, true);
 
 let origin = -1920;
 let position = -1400;
+/**
+ * Objeto Screen mínimo que reproduz propriedades extensíveis do navegador.
+ */
 class Screen {
   get availLeft() { return origin; }
   get availTop() { return 0; }
@@ -18,6 +27,9 @@ class Screen {
   get height() { return 1080; }
   get isExtended() { return true; }
 }
+/**
+ * Janela simulada com posições e API de enumeração de telas.
+ */
 class Window {
   constructor() { this.screen = new Screen(); }
   get screenX() { return position; }

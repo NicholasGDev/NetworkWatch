@@ -1,3 +1,5 @@
+"""Compõe e executa o backend local do NetWatch no Windows."""
+
 import argparse
 import ctypes
 import json
@@ -17,6 +19,14 @@ DEFAULT_PROMPT = 'Analise a captura. Se houver uma pergunta, responda diretament
 DATA_FILES = ('config.json', 'history.sqlite3')
 
 def data_folder(environ=os.environ):
+    """Cria a pasta atual e migra arquivos legados sem sobrescrever dados.
+
+    Args:
+        environ: Variáveis de ambiente usadas para resolver o diretório local.
+
+    Returns:
+        Caminho da pasta de dados do usuário.
+    """
     if environ.get('SCROLLANSWER_DATA_DIR'):
         folder = Path(environ['SCROLLANSWER_DATA_DIR'])
         folder.mkdir(parents=True, exist_ok=True)
@@ -31,6 +41,11 @@ def data_folder(environ=os.environ):
     return folder
 
 def main():
+    """Carrega a configuração e inicia servidor, coletor e atalho.
+
+    Returns:
+        None: O servidor permanece ativo até o processo ser encerrado.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-hotkey', action='store_true')
     args = parser.parse_args()

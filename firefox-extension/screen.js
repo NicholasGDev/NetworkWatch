@@ -1,5 +1,18 @@
+/**
+ * Normaliza dados públicos de posição de tela expostos às páginas.
+ *
+ * @file
+ */
+
 (() => {
   const nativeScreen = window.screen;
+  /**
+   * Lê o valor original de uma propriedade sem modificar seu descritor.
+   *
+   * @param {object} object Objeto que contém a propriedade.
+   * @param {string} property Nome da propriedade.
+   * @returns {Function} Função que lê o valor nativo em tempo de execução.
+   */
   function nativeValue(object, property) {
     let owner = object;
     while (owner) {

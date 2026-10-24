@@ -1,3 +1,5 @@
+"""Captura da janela ativa e registro do atalho global no Windows."""
+
 import ctypes
 from ctypes import wintypes
 import io
@@ -6,6 +8,7 @@ import threading
 from .services import UserError
 
 def capture_active_window():
+    """Captura a área visível da janela ativa e devolve PNG somente em memória."""
     if os.name != 'nt':
         raise UserError('A captura global requer Windows.')
     from PIL import ImageGrab
@@ -34,15 +37,20 @@ def capture_active_window():
             return buffer.getvalue()
 
 class ScrollLockListener:
+    """Registra Scroll Lock sem instalar um hook global de teclado."""
+
     def __init__(self, service):
+        """Associa o ouvinte ao serviço de captura."""
         self.service = service
         self.thread_id = None
 
     def start(self):
+        """Inicia a thread dedicada à mensagem de atalho do Windows."""
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
     def _run(self):
+        """Registra Scroll Lock e encaminha cada evento ao serviço de captura."""
         if os.name != 'nt':
             self.service.hotkey_error = 'O atalho requer Windows.'
             return
@@ -66,6 +74,7 @@ class ScrollLockListener:
             self.service.hotkey_ready = False
 
     def stop(self):
+        """Encerra a fila de mensagens e aguarda a thread do atalho."""
         if self.thread_id and os.name == 'nt':
             ctypes.windll.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
             self.thread.join(timeout=2)

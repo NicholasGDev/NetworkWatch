@@ -1,3 +1,5 @@
+"""Testes de integração e unidade do backend, das APIs e dos provedores."""
+
 import io
 from contextlib import closing
 import json
@@ -21,7 +23,10 @@ from app.services import CaptureService, ClaudeVisionClient, FallbackVision, Gem
 from app.secure_storage import is_protected, load_config, protect_text, unprotect_text
 
 class AppTests(unittest.TestCase):
+    """Verifica autenticação local, captura, histórico e entrega de respostas."""
+
     def setUp(self):
+        """Prepara banco temporário, serviço falso e cliente de teste Flask."""
         self.tmp = tempfile.TemporaryDirectory()
         self.history = History(Path(self.tmp.name) / 'test.db')
         self.vision = SimpleNamespace(key='fake-key', model='test-model', answer=lambda png: 'Resposta')
@@ -30,26 +35,32 @@ class AppTests(unittest.TestCase):
         self.client = self.app.test_client()
         self.base = 'http://127.0.0.1'
     def tearDown(self):
+        """Aguarda tarefas assíncronas e remove os dados temporários."""
         self.wait()
         self.tmp.cleanup()
     def wait(self):
+        """Aguarda a liberação do bloqueio de processamento da captura."""
         deadline = time.monotonic() + 3
         while self.service.lock.locked() and time.monotonic() < deadline:
             time.sleep(.01)
         self.assertFalse(self.service.lock.locked())
     def login(self):
+        """Cria uma sessão autenticada e retorna o cabeçalho CSRF."""
         result = self.client.get('/bootstrap?token=test-token', base_url=self.base)
         self.assertEqual(result.status_code, 302)
         with self.client.session_transaction(base_url=self.base) as session:
             return {'X-CSRF-Token': session['csrf']}
     def test_unauthorized_history(self):
+        """Impede a leitura do estado sem sessão autenticada."""
         self.assertEqual(self.client.get('/api/state', base_url=self.base).status_code, 401)
     def test_token_single_use_and_host(self):
+        """Restringe bootstrap a um token único e a solicitações locais."""
         self.assertEqual(self.client.get('/bootstrap?token=wrong', base_url=self.base).status_code, 403)
         self.login()
         self.assertEqual(self.client.get('/bootstrap?token=test-token', base_url=self.base).status_code, 403)
         self.assertEqual(self.client.get('/api/state', base_url='http://evil.example').status_code, 403)
     def test_csrf_and_pause(self):
+        """Exige CSRF para pausar e bloqueia captura durante a pausa."""
         headers = self.login()
         self.assertEqual(self.client.post('/api/pause', json={'paused': True}, base_url=self.base).status_code, 403)
         result = self.client.post('/api/pause', json={'paused': True}, headers=headers, base_url=self.base)
@@ -57,6 +68,7 @@ class AppTests(unittest.TestCase):
         self.assertFalse(self.service.trigger())
         self.assertEqual(self.history.list(), [])
     def test_complete_flow(self):
+        """Valida captura, histórico, renderização e endpoint do monitor."""
         self.assertTrue(self.service.trigger())
         self.wait()
         self.login()
@@ -73,6 +85,7 @@ class AppTests(unittest.TestCase):
         self.assertIn('Voltar ao painel', app_page)
         self.assertEqual(self.client.get('/api/network', base_url=self.base).status_code, 503)
     def test_email_sent_after_successful_answer(self):
+        """Envia por e-mail somente após a resposta ser concluída."""
         sender = Mock()
         self.service.email_sender = sender
         self.assertTrue(self.service.trigger())
@@ -81,6 +94,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.history.list()[0]['email_status'], 'sent')
         self.assertEqual(self.history.list()[0]['answer'], 'Resposta')
     def test_email_failure_preserves_answer(self):
+        """Preserva a resposta quando SMTP falha e não expõe credenciais."""
         self.service.email_sender = SimpleNamespace(send=Mock(side_effect=smtplib.SMTPAuthenticationError(535, b'password hidden')))
         self.assertTrue(self.service.trigger())
         self.wait()
@@ -91,6 +105,7 @@ class AppTests(unittest.TestCase):
         self.assertIn('SMTPAuthenticationError', item['email_error'])
         self.assertNotIn('password hidden', item['email_error'])
     def test_duplicate_blocked(self):
+        """Evita duas capturas simultâneas e mantém apenas um registro."""
         release = threading.Event()
         self.vision.answer = lambda png: (release.wait(2), 'ok')[1]
         try:
@@ -101,27 +116,36 @@ class AppTests(unittest.TestCase):
         self.wait()
         self.assertEqual(len(self.history.list()), 1)
     def test_missing_key_does_not_capture(self):
+        """Registra erro configurável sem tentar capturar sem chave de API."""
         self.vision.key = ''
         self.service.capture = lambda: self.fail('must not capture')
         self.assertFalse(self.service.trigger())
         self.assertEqual(self.history.list()[0]['status'], 'error')
     def test_capture_failure_releases_lock(self):
-        def fail(): raise UserError('Janela indisponível')
+        """Libera o bloqueio e registra erro se a captura falhar."""
+        def fail():
+            """Simula uma indisponibilidade da janela capturada."""
+            raise UserError('Janela indisponível')
         self.service.capture = fail
         self.assertFalse(self.service.trigger())
         self.assertFalse(self.service.lock.locked())
         self.assertEqual(self.history.list()[0]['answer'], 'Janela indisponível')
     def test_api_failure_releases_lock(self):
-        def fail(png): raise UserError('Sem conexão')
+        """Libera o bloqueio e registra erro se o provedor falhar."""
+        def fail(png):
+            """Simula indisponibilidade do provedor de respostas."""
+            raise UserError('Sem conexão')
         self.vision.answer = fail
         self.service.trigger()
         self.wait()
         self.assertEqual(self.history.list()[0]['answer'], 'Sem conexão')
     def test_restart_recovers_pending(self):
+        """Marca solicitações pendentes como erro ao reabrir o banco."""
         self.history.create()
         restarted = History(self.history.path)
         self.assertEqual(restarted.list()[0]['status'], 'error')
     def test_restart_marks_unconfirmed_email(self):
+        """Marca envios SMTP interrompidos como não confirmados na retomada."""
         item_id = self.history.create()
         self.history.finish(item_id, 'done', 'Resposta')
         self.history.email_result(item_id, 'sending')
@@ -129,6 +153,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(restarted.list()[0]['email_status'], 'error')
         self.assertIn('não confirmada', restarted.list()[0]['email_error'])
     def test_existing_history_adds_email_fields(self):
+        """Migra banco legado e acrescenta o estado de e-mail padrão."""
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'old.db'
             with closing(sqlite3.connect(path)) as db:
@@ -140,12 +165,14 @@ class AppTests(unittest.TestCase):
             self.assertEqual(history.list()[0]['email_status'], 'disabled')
             self.assertNotIn(b'antiga', path.read_bytes())
     def test_history_answers_are_encrypted_on_disk(self):
+        """Confirma que o texto da resposta não permanece legível no banco."""
         item_id = self.history.create()
         self.history.finish(item_id, 'done', 'Resposta confidencial')
         with open(self.history.path, 'rb') as database:
             self.assertNotIn(b'Resposta confidencial', database.read())
         self.assertEqual(self.history.list()[0]['answer'], 'Resposta confidencial')
     def test_clear_preserves_pending(self):
+        """Limpa respostas concluídas sem apagar solicitações pendentes."""
         a = self.history.create()
         self.history.finish(a, 'done', 'answer')
         self.history.create()
@@ -153,7 +180,10 @@ class AppTests(unittest.TestCase):
         self.assertEqual([r['status'] for r in self.history.list()], ['pending'])
 
 class EmailTests(unittest.TestCase):
+    """Valida protocolo, autenticação e conteúdo da mensagem SMTP."""
+
     def test_ssl_sends_only_answer(self):
+        """Usa SSL, autentica e envia somente a resposta sem a senha."""
         smtp = Mock()
         smtp.__enter__ = Mock(return_value=smtp)
         smtp.__exit__ = Mock(return_value=False)
@@ -169,6 +199,7 @@ class EmailTests(unittest.TestCase):
         self.assertNotIn('secret', message.as_string())
 
     def test_starttls_before_login(self):
+        """Negocia STARTTLS antes de enviar as credenciais SMTP."""
         smtp = Mock()
         smtp.__enter__ = Mock(return_value=smtp)
         smtp.__exit__ = Mock(return_value=False)
@@ -180,7 +211,10 @@ class EmailTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == 'nt', 'DPAPI do Windows')
 class SecureStorageTests(unittest.TestCase):
+    """Verifica proteção DPAPI e migração da configuração local."""
+
     def test_dpapi_round_trip_and_purpose_isolation(self):
+        """Criptografa e revela dados, rejeitando finalidade incompatível."""
         encrypted = protect_text('credencial de teste', 'smtp_password')
         self.assertTrue(is_protected(encrypted))
         self.assertNotIn('credencial de teste', encrypted)
@@ -189,6 +223,7 @@ class SecureStorageTests(unittest.TestCase):
             unprotect_text(encrypted, 'api_key')
 
     def test_config_secrets_migrate_to_dpapi_and_remain_usable(self):
+        """Protege segredos legados sem alterar seus valores em memória."""
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'config.json'
             path.write_text(json.dumps({'smtp_password': 'senha-de-teste',
@@ -205,8 +240,12 @@ class SecureStorageTests(unittest.TestCase):
             self.assertEqual(load_config(path)['smtp_password'], 'senha-de-teste')
 
 class VisionTests(unittest.TestCase):
+    """Testa construção de requisições e erros do cliente OpenAI."""
+
     def test_request_and_response(self):
+        """Envia imagem sem armazenamento remoto e lê texto da resposta."""
         def opener(req, timeout):
+            """Confere o corpo enviado e fornece uma resposta OpenAI simulada."""
             payload = json.loads(req.data)
             self.assertEqual(timeout, 120)
             self.assertFalse(payload['store'])
@@ -215,37 +254,51 @@ class VisionTests(unittest.TestCase):
             return io.StringIO(json.dumps({'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': '42'}]}]}))
         self.assertEqual(VisionClient('test', 'model', 'prompt', opener).answer(b'png'), '42')
     def test_http_error_is_sanitized(self):
+        """Converte falha HTTP em mensagem segura sem revelar a chave."""
         def opener(*args, **kwargs):
+            """Simula resposta HTTP de chave inválida."""
             raise urllib.error.HTTPError('url', 401, 'secret-key', {}, None)
         with self.assertRaisesRegex(UserError, 'Chave da API inválida'):
             VisionClient('secret-key', 'model', 'prompt', opener).answer(b'png')
     def test_empty_response(self):
+        """Rejeita resposta sem texto útil."""
         with self.assertRaisesRegex(UserError, 'não retornou texto'):
             VisionClient('key', 'model', 'prompt', lambda *a, **kw: io.StringIO('{}')).answer(b'png')
     def test_connection_error_shows_reason(self):
+        """Apresenta causa de conectividade sem ocultar o tipo do erro."""
         def opener(*args, **kwargs):
+            """Simula falha de rede do endpoint OpenAI."""
             raise urllib.error.URLError(ConnectionRefusedError('recusada'))
         with self.assertRaisesRegex(UserError, 'ConnectionRefusedError: recusada'):
             VisionClient('key', 'model', 'prompt', opener).answer(b'png')
 
 class FakeAnthropic:
+    """Simula o cliente Anthropic e registra as chamadas feitas pelo teste."""
+
     def __init__(self, reply=None, error=None):
+        """Configura resposta ou erro e inicializa o histórico de chamadas."""
         self.reply, self.error, self.calls = reply, error, []
     def __call__(self, **options):
+        """Registra opções de criação do cliente e expõe a API simulada."""
         self.options = options
         self.beta = SimpleNamespace(messages=SimpleNamespace(create=self.create))
         return self
     def create(self, **kwargs):
+        """Registra a requisição e devolve a resposta ou o erro configurado."""
         self.calls.append(kwargs)
         if self.error:
             raise self.error
         return self.reply
 
 def claude_reply(text, stop_reason='end_turn'):
+    """Monta uma resposta Anthropic mínima para os testes."""
     return SimpleNamespace(stop_reason=stop_reason, content=[SimpleNamespace(type='thinking', thinking=''), SimpleNamespace(type='text', text=text)])
 
 class ClaudeTests(unittest.TestCase):
+    """Valida requisições Claude, recusas e falhas de conexão."""
+
     def test_request_and_response(self):
+        """Confere opções seguras de retentativa e conteúdo da requisição."""
         fake = FakeAnthropic(claude_reply('42'))
         self.assertEqual(ClaudeVisionClient('k', 'claude-opus-5-5', 'prompt', fake).answer(b'png'), '42')
         self.assertEqual(fake.options['max_retries'], 0)
@@ -255,18 +308,24 @@ class ClaudeTests(unittest.TestCase):
         image = call['messages'][0]['content'][0]
         self.assertEqual(image['source'], {'type': 'base64', 'media_type': 'image/png', 'data': 'cG5n'})
     def test_refusal(self):
+        """Converte recusa do provedor em erro apresentado ao usuário."""
         fake = FakeAnthropic(claude_reply('', 'refusal'))
         with self.assertRaisesRegex(UserError, 'recusou'):
             ClaudeVisionClient('k', 'm', 'p', fake).answer(b'png')
     def test_connection_error(self):
+        """Converte falha de transporte Anthropic em erro de serviço."""
         import anthropic, httpx2
         fake = FakeAnthropic(error=anthropic.APIConnectionError(request=httpx2.Request('POST', 'https://api.anthropic.com')))
         with self.assertRaisesRegex(UserError, 'Sem resposta da API do Claude'):
             ClaudeVisionClient('k', 'm', 'p', fake).answer(b'png')
 
 class GeminiTests(unittest.TestCase):
+    """Valida requisições Gemini, erros de chave e bloqueios de segurança."""
+
     def test_request_and_response(self):
+        """Envia imagem e ignora partes internas de raciocínio do modelo."""
         def opener(req, timeout):
+            """Confere a imagem e fornece uma resposta Gemini simulada."""
             self.assertEqual(timeout, 120)
             self.assertTrue(req.full_url.endswith('/models/gemini-flash-latest:generateContent'))
             self.assertEqual(req.get_header('X-goog-api-key'), 'k')
@@ -276,22 +335,30 @@ class GeminiTests(unittest.TestCase):
                 {'text': 'pensando', 'thought': True}, {'text': '42'}]}}]}))
         self.assertEqual(GeminiVisionClient('k', 'gemini-flash-latest', 'prompt', opener).answer(b'png'), '42')
     def test_invalid_key(self):
+        """Reconhece chave Gemini inválida mesmo quando retorna HTTP 400."""
         def opener(*args, **kwargs):
+            """Simula erro de chave inválida retornado pela API Gemini."""
             raise urllib.error.HTTPError('url', 400, 'bad', {}, io.BytesIO(b'{"error": {"status": "INVALID_ARGUMENT", "details": [{"reason": "API_KEY_INVALID"}]}}'))
         with self.assertRaisesRegex(UserError, 'Chave do Gemini inválida'):
             GeminiVisionClient('k', 'm', 'p', opener).answer(b'png')
     def test_model_not_found(self):
+        """Apresenta orientação quando o modelo configurado não existe."""
         def opener(*args, **kwargs):
+            """Simula resposta de modelo inexistente."""
             raise urllib.error.HTTPError('url', 404, 'nf', {}, io.BytesIO(b'{}'))
         with self.assertRaisesRegex(UserError, 'GEMINI_MODEL'):
             GeminiVisionClient('k', 'm', 'p', opener).answer(b'png')
     def test_blocked(self):
+        """Informa quando o provedor bloqueia a captura por segurança."""
         opener = lambda *a, **kw: io.StringIO(json.dumps({'promptFeedback': {'blockReason': 'SAFETY'}}))
         with self.assertRaisesRegex(UserError, 'bloqueou'):
             GeminiVisionClient('k', 'm', 'p', opener).answer(b'png')
 
 class DataFolderTests(unittest.TestCase):
+    """Verifica migração de dados legados para a pasta atual do aplicativo."""
+
     def test_migrates_legacy_data_without_overwriting(self):
+        """Move configuração e histórico antigos sem sobrescrever destino."""
         from backend import data_folder
         with tempfile.TemporaryDirectory() as tmp:
             legacy, new = Path(tmp) / 'ScrollAnswer', Path(tmp) / 'NetWatch'
@@ -307,7 +374,10 @@ class DataFolderTests(unittest.TestCase):
             self.assertIn('gemini_api_key', (new / 'config.json').read_text(encoding='utf-8'))
 
 class NetworkTests(unittest.TestCase):
+    """Verifica métricas, captura UDP e atribuição local de endpoints."""
+
     def test_default_monitor_does_not_probe_external_hosts(self):
+        """Confirma que o monitor não sonda hosts externos por padrão."""
         from app.network import NetworkMonitor
         connect = Mock(side_effect=AssertionError('No external probe is configured'))
         monitor = NetworkMonitor(connect=connect)
@@ -317,6 +387,7 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(monitor.latency, [])
 
     def test_rates_and_history(self):
+        """Calcula taxas e exclui loopback dos totais apresentados."""
         from app.network import NetworkMonitor
         counters = iter([{'Ethernet': (0, 0), 'Loopback Pseudo-Interface 1': (0, 0)},
                          {'Ethernet': (1000, 5000), 'Loopback Pseudo-Interface 1': (9999, 9999)}])
@@ -327,9 +398,11 @@ class NetworkTests(unittest.TestCase):
         _, down, up = monitor.history[-1]
         self.assertEqual((down, up), (20000, 4000))  # loopback fica fora do total
     def test_probe(self):
+        """Registra resultados de destinos configurados e indisponíveis."""
         from app.network import NetworkMonitor
         import contextlib
         def connect(address, timeout):
+            """Simula sucesso ou falha de conexão conforme o destino."""
             if address[0] == 'down':
                 raise OSError('timeout')
             return contextlib.nullcontext()
@@ -339,6 +412,7 @@ class NetworkTests(unittest.TestCase):
         self.assertIsNotNone(monitor.latency[0]['ms'])
         self.assertEqual(monitor.latency[1], {'name': 'B', 'host': 'down', 'ms': None, 'ok': False})
     def test_snapshot_shape(self):
+        """Confere campos serializáveis e exclusão de interfaces loopback."""
         from app.network import NetworkMonitor
         snap = NetworkMonitor(targets=[]).snapshot()
         for key in ('hostname', 'down_bps', 'up_bps', 'interfaces', 'latency', 'connections', 'history', 'observed', 'uptime'):
@@ -347,6 +421,7 @@ class NetworkTests(unittest.TestCase):
         self.assertFalse(any('loopback' in i['name'].lower() for i in snap['interfaces']))
         json.dumps(snap)
     def test_remote_endpoints_belong_to_active_process(self):
+        """Limita endpoints aos processos do aplicativo em primeiro plano."""
         from app.network import NetworkMonitor
         address = lambda ip, port: SimpleNamespace(ip=ip, port=port)
         conns = [
@@ -376,6 +451,7 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(monitor.snapshot()['observed']['process'], 'game.exe')
 
     def test_endpoints_expire_after_30_seconds(self):
+        """Remove endpoints observados há 30 segundos ou mais."""
         from app.network import NetworkMonitor
         monitor = NetworkMonitor(targets=[])
         with patch('app.network.time.monotonic', return_value=100):
@@ -385,6 +461,7 @@ class NetworkTests(unittest.TestCase):
             self.assertEqual(monitor.snapshot()['observed']['endpoints'], [])
 
     def test_unrelated_udp_socket_cannot_claim_packet(self):
+        """Ignora pacotes de porta UDP compartilhada por processos distintos."""
         from app.network import NetworkMonitor
         address = lambda ip, port: SimpleNamespace(ip=ip, port=port)
         conns = [
@@ -399,6 +476,7 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(monitor.snapshot()['observed']['endpoints'], [])
 
     def test_udp_ipv4_header_checks_protocol_length_and_fragments(self):
+        """Rejeita cabeçalhos truncados, não UDP e fragmentados."""
         from app.network import udp_ipv4_header
         header = bytearray(28)
         header[0] = 0x45
@@ -415,8 +493,12 @@ class NetworkTests(unittest.TestCase):
         self.assertIsNone(udp_ipv4_header(header))
 
 class GitHubModelsTests(unittest.TestCase):
+    """Valida chamadas ao GitHub Models e mapeamento de falhas comuns."""
+
     def test_request_and_response(self):
+        """Envia imagem, modelo e token e interpreta a resposta textual."""
         def opener(req, timeout):
+            """Confere a requisição e devolve uma resposta de chat simulada."""
             self.assertEqual(req.full_url, 'https://models.github.ai/inference/chat/completions')
             self.assertEqual(req.get_header('Authorization'), 'Bearer tok')
             payload = json.loads(req.data)
@@ -425,43 +507,56 @@ class GitHubModelsTests(unittest.TestCase):
             return io.StringIO(json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': '42'}}]}))
         self.assertEqual(GitHubModelsVisionClient('tok', 'openai/gpt-6-luna', 'p', opener).answer(b'png'), '42')
     def test_rate_limit(self):
+        """Traduz limite do GitHub Models em mensagem orientativa."""
         def opener(*args, **kwargs):
+            """Simula limite de requisições do provedor."""
             raise urllib.error.HTTPError('url', 429, 'rl', {}, None)
         with self.assertRaisesRegex(UserError, 'Limite gratuito do GitHub'):
             GitHubModelsVisionClient('tok', 'm', 'p', opener).answer(b'png')
     def test_missing_scope(self):
+        """Explica a falta da permissão models:read."""
         def opener(*args, **kwargs):
+            """Simula negação de acesso ao modelo."""
             raise urllib.error.HTTPError('url', 403, 'no', {}, None)
         with self.assertRaisesRegex(UserError, 'models:read'):
             GitHubModelsVisionClient('tok', 'm', 'p', opener).answer(b'png')
 
 class FallbackTests(unittest.TestCase):
+    """Valida seleção e ordem de fallback entre provedores de IA."""
+
     def client(self, name='X', key='k', model='m', result=None, error=None):
+        """Cria um cliente simples de teste com resultado ou erro configurável."""
         def answer(png):
+            """Retorna o resultado simulado ou lança o erro configurado."""
             if error:
                 raise error
             return result
         return SimpleNamespace(name=name, key=key, model=model, answer=answer)
     def test_primary_ok(self):
+        """Retorna a resposta primária sem chamar o próximo provedor."""
         vision = FallbackVision(self.client(result='gemini'), self.client(error=AssertionError('não deve chamar')))
         self.assertEqual(vision.answer(b'png'), 'gemini')
     def test_falls_back_in_order(self):
+        """Tenta os provedores na ordem e identifica a origem do sucesso."""
         vision = FallbackVision(self.client('Gemini', error=UserError('cota')), self.client('OpenAI', error=UserError('rede')),
             self.client('Claude', model='claude-opus-5-5', result='claude'))
         result = vision.answer(b'png')
         self.assertTrue(result.startswith('claude'))
         self.assertIn('Gemini: cota; OpenAI: rede', result)
     def test_all_fail(self):
+        """Combina erros quando nenhum provedor consegue responder."""
         vision = FallbackVision(self.client('Gemini', error=UserError('A')), self.client('OpenAI', error=UserError('B')))
         with self.assertRaisesRegex(UserError, 'Gemini: A\nOpenAI: B'):
             vision.answer(b'png')
     def test_only_one_key(self):
+        """Usa apenas o cliente configurado e expõe diretamente seu erro."""
         vision = FallbackVision(self.client('Gemini', model='g', error=UserError('A')), self.client(key='', error=AssertionError('não deve chamar')))
         self.assertTrue(vision.key)
         self.assertEqual(vision.model, 'g')
         with self.assertRaisesRegex(UserError, '^A$'):
             vision.answer(b'png')
     def test_no_keys(self):
+        """Indica que não há provedor utilizável sem nenhuma chave."""
         vision = FallbackVision(self.client(key=''), self.client(key=''))
         self.assertFalse(vision.key)
 

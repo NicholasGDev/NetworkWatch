@@ -1,27 +1,71 @@
+/**
+ * Atualiza métricas de rede e renderiza gráficos e tabelas locais.
+ *
+ * @file
+ */
+
+/**
+ * Obtém um elemento da página pelo identificador.
+ *
+ * @param {string} id Identificador do elemento.
+ * @returns {HTMLElement|null} Elemento encontrado ou null.
+ */
 const $ = (id) => document.getElementById(id);
 
+/**
+ * Formata uma taxa em bits por segundo com unidade legível.
+ *
+ * @param {number} bps Taxa de transferência em bits por segundo.
+ * @returns {string} Taxa formatada com a unidade apropriada.
+ */
 function rate(bps) {
   const units = ['bps', 'Kbps', 'Mbps', 'Gbps'];
   let i = 0;
   while (bps >= 1000 && i < units.length - 1) { bps /= 1000; i++; }
   return (i ? bps.toFixed(bps < 10 ? 2 : 1) : Math.round(bps)) + ' ' + units[i];
 }
+/**
+ * Formata uma quantidade de bytes com unidade binária.
+ *
+ * @param {number} n Quantidade de bytes.
+ * @returns {string} Quantidade formatada com unidade binária.
+ */
 function bytes(n) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;
   while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
   return n.toFixed(i ? 1 : 0) + ' ' + units[i];
 }
+/**
+ * Formata segundos de atividade como dias, horas e minutos.
+ *
+ * @param {number} s Duração em segundos.
+ * @returns {string} Duração legível.
+ */
 function duration(s) {
   const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
   return (d ? d + 'd ' : '') + h + 'h ' + String(m).padStart(2, '0') + 'm';
 }
+/**
+ * Cria uma célula de tabela usando texto, sem interpretar HTML.
+ *
+ * @param {string|number} text Conteúdo textual da célula.
+ * @param {string} [cls] Classes CSS adicionais.
+ * @returns {HTMLTableCellElement} Célula pronta para inserção na tabela.
+ */
 function cell(text, cls) {
   const td = document.createElement('td');
   td.textContent = text;
   if (cls) td.className = cls;
   return td;
 }
+/**
+ * Cria um selo visual com texto e classes CSS fornecidos.
+ *
+ * @param {string} text Texto exibido no selo.
+ * @param {string} cls Classes CSS do selo.
+ * @returns {HTMLSpanElement} Selo pronto para inserção no documento.
+ */
 function badge(text, cls) {
   const span = document.createElement('span');
   span.className = 'badge badge-sm ' + cls;
@@ -29,6 +73,12 @@ function badge(text, cls) {
   return span;
 }
 
+/**
+ * Atualiza linhas SVG do gráfico com as amostras recentes.
+ *
+ * @param {Array<Array<number>>} history Amostras de horário, download e upload.
+ * @returns {void}
+ */
 function chart(history) {
   const w = 600, h = 180, pad = 8;
   const peak = Math.max(1000, ...history.flatMap(([, d, u]) => [d, u]));
@@ -41,6 +91,12 @@ function chart(history) {
   $('peak').textContent = rate(peak);
 }
 
+/**
+ * Preenche os indicadores e tabelas usando a fotografia de rede recebida.
+ *
+ * @param {object} s Fotografia serializável enviada pelo backend.
+ * @returns {void}
+ */
 function render(s) {
   $('host').textContent = s.hostname;
   $('uptime').textContent = duration(s.uptime);
@@ -102,6 +158,11 @@ function render(s) {
   chart(s.history);
 }
 
+/**
+ * Consulta o backend local e atualiza periodicamente o indicador de conexão.
+ *
+ * @returns {Promise<void>}
+ */
 async function refresh() {
   try {
     const response = await fetch('/api/network');

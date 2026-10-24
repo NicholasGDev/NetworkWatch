@@ -1,3 +1,4 @@
+/* Fontes Tailwind/DaisyUI e diretórios monitorados para gerar o CSS da interface. */
 @import "tailwindcss";
 @source "../app/templates";
 @source "../app/static/app.js";

@@ -1,3 +1,11 @@
+<#
+.SYNOPSIS
+Prepara o ambiente local de desenvolvimento do NetWatch.
+.DESCRIPTION
+Cria o ambiente Python, instala dependências e gera os estilos CSS.
+.PARAMETER PythonExe
+Executável Python 3.11 ou superior usado para criar o ambiente virtual.
+#>
 param([string]$PythonExe = 'python')
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
