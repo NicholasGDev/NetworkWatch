@@ -1,4 +1,4 @@
-# ScrollAnswer (instalado como NetWatch)
+# NetWatch
 
 O app instalado se chama **NetWatch** e abre num painel de monitoramento de rede com dados reais. O **®** do rodapé abre o ScrollAnswer; o botão "Voltar ao painel de rede" ou **Esc** retorna. Chaves e histórico ficam em `%LOCALAPPDATA%\NetWatch`; os de `%LOCALAPPDATA%\ScrollAnswer` são migrados automaticamente na primeira execução.
 
