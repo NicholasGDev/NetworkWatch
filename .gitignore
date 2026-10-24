@@ -1,0 +1,9 @@
+.venv/
+node_modules/
+src-tauri/target/
+src-tauri/resources/*.exe
+build/
+dist/
+*.spec
+__pycache__/
+.env
